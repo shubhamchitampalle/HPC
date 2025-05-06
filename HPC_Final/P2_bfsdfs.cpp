@@ -1,87 +1,174 @@
 #include <iostream>
 #include <vector>
 #include <queue>
+#include <stack>
 #include <omp.h>
-
 using namespace std;
 
-// Graph class representing the adjacency list
 class Graph {
-    int V;  // Number of vertices
-    vector<vector<int>> adj;  // Adjacency list
+private:
+    int numVertices;
+    vector<vector<int>> adj;
 
-public:
-    Graph(int V) : V(V), adj(V) {}
-
-    // Add an edge to the graph
-    void addEdge(int v, int w) {
-        adj[v].push_back(w);
+    public:
+    Graph(int vertices) {
+        numVertices = vertices;
+        adj.resize(vertices);
     }
 
-    // Parallel Depth-First Search
-    void parallelDFS(int startVertex) {
-        vector<bool> visited(V, false);
-        parallelDFSUtil(startVertex, visited);
+    void addEdge(int src, int dest) {
+        adj[src].push_back(dest);
+        adj[dest].push_back(src);
     }
 
-    // Parallel DFS utility function
-    void parallelDFSUtil(int v, vector<bool>& visited) {
-        //#pragma omp critical
-       // { 
-        visited[v] = true;
-        cout << v << " ";
-       // }
-        #pragma omp parallel for
-        for (int i = 0; i < adj[v].size(); ++i) {
-            int n = adj[v][i];
-            if (!visited[n])
-                parallelDFSUtil(n, visited);
+    void viewGraph() {
+        cout << "\nGraph:\n";
+        for (int i = 0; i < numVertices; i++) {
+            cout << "Vertex " << i << " -> ";
+            for (int neighbor : adj[i]) {
+                cout << neighbor << " ";
+            }
+            cout << endl;
         }
     }
 
-    // Parallel Breadth-First Search
-    void parallelBFS(int startVertex) {
-        vector<bool> visited(V, false);
+    // Parallel BFS with thread logging
+    void bfs(int startVertex) {
+        vector<bool> visited(numVertices, false);
         queue<int> q;
 
         visited[startVertex] = true;
         q.push(startVertex);
 
+        cout << "\nParallel BFS Output:\n";
+
         while (!q.empty()) {
-            int v = q.front();
+            int currentVertex = q.front();
             q.pop();
-            cout << v << " ";
-
-            //#pragma omp parallel for
-            for (int i = 0; i < adj[v].size(); ++i) {
-                int n = adj[v][i];
-                if (!visited[n]) {
-
-                    visited[n] = true;
-                    q.push(n);
-                }
+    
+            #pragma omp critical
+            {
+                cout << currentVertex << endl;
             }
+    
+            // Gather neighbors to process in parallel safely
+            vector<int> neighbors = adj[currentVertex];
+            #pragma omp parallel for
+            for (int i = 0; i < neighbors.size(); i++) {
+                int neighbor = neighbors[i];
+                int thread_id = omp_get_thread_num();
+    
+                bool shouldVisit = false;
+    
+                // Synchronize check-and-mark
+                #pragma omp critical
+                {
+                    if (!visited[neighbor]) {
+                        visited[neighbor] = true;
+                        q.push(neighbor);
+                        shouldVisit = true;
+                    }
+                }
+    
             
+                    #pragma omp critical
+                    {
+                        cout << "Thread " << thread_id << " visiting node " << neighbor << endl;
+                    }
+            }
+
         }
     }
+
+    // Helper for parallel DFS
+    void dfs(int startVertex) {
+        vector<bool> visited(numVertices, false);
+        stack<int> s;
+    
+        visited[startVertex] = true;
+        s.push(startVertex);
+    
+        cout << "\nDFS Output:\n";
+    
+        while (!s.empty()) {
+            int currentVertex = s.top();
+            s.pop();
+    
+            #pragma omp critical
+            {
+                cout << currentVertex << endl;
+            }
+    
+            // Gather neighbors to process in parallel safely
+            vector<int> neighbors = adj[currentVertex];
+    
+            #pragma omp parallel for
+            for (int i = 0; i < neighbors.size(); i++) {
+                int neighbor = neighbors[i];
+                int thread_id = omp_get_thread_num();
+    
+                bool shouldVisit = false;
+    
+                // Synchronize check-and-mark
+                #pragma omp critical
+                {
+                    if (!visited[neighbor]) {
+                        visited[neighbor] = true;
+                        s.push(neighbor);
+                        shouldVisit = true;
+                    }
+                }
+    
+            
+                    #pragma omp critical
+                    {
+                        cout << "Thread " << thread_id << " visiting node " << neighbor << endl;
+                    }
+                
+            }
+        }
+    }
+     
 };
 
 int main() {
-    // Create a graph
-    int n;
-    cout<<"enter number of node: "<<endl;
-    cin>>n;
-    Graph g(n);
-    int edges;
-    cout<<"enter number of edges "<<endl;
-    cin>>edges;
-    for(int i=0;i<edges;i++){
-        int s,e;
-        cout<<"enter start and end vertex: "<<endl;
-        cin>>s>>e;
-        g.addEdge(s,e);
+    int numVertices, numEdges;
+    cout << "Enter number of vertices: ";
+    cin >> numVertices;
+
+    Graph graph(numVertices);
+
+    cout << "Enter number of edges: ";
+    cin >> numEdges;
+
+    cout << "Enter the edges (source destination):\n";
+    for (int i = 0; i < numEdges; i++) {
+        int src, dest;
+        cin >> src >> dest;
+        graph.addEdge(src, dest);
     }
-    // Graph g(7);
+
+    graph.viewGraph();
+
+    int startVertex;
+    cout << "Enter the starting vertex: ";
+    cin >> startVertex;
+    double startTime = omp_get_wtime();
+
+    graph.bfs(startVertex);
+    graph.dfs(startVertex);
+
+    double endTime = omp_get_wtime();
+
+    cout << "\nTotal time for BFS + DFS: " << (endTime - startTime) << " seconds" << endl;
+
+    return 0;
+}
+
+
+
+
+  // Graph g(7);
     // g.addEdge(0, 1);
     // g.addEdge(0, 2);
     // g.addEdge(1, 3);
@@ -95,26 +182,9 @@ int main() {
         |        /   \
         |       /     \
         |      /       \
-        2 ----3         4
+        2     3         4
       / |      
      /  |      
     /   |      
     5   6      
     */
-
-    cout << "Depth-First Search (DFS): ";
-    double start_time = omp_get_wtime();
-    g.parallelDFS(0);
-    double end_time = omp_get_wtime();
-    cout << endl;
-    cout << "Parallel DFS Execution Time: " << end_time - start_time << " seconds" << endl;
-
-    cout << "Breadth-First Search (BFS): ";
-    start_time = omp_get_wtime();
-    g.parallelBFS(0);
-    end_time = omp_get_wtime();
-    cout << endl;
-    cout << "Parallel BFS Execution Time: " << end_time - start_time << " seconds" << endl;
-   
-    return 0;
-}
